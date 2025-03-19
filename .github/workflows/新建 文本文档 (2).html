@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>图片分页显示（修复点击放大问题）</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .image-container {
+            display: none; /* 默认隐藏所有图片容器 */
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+            max-width: 800px;
+            margin: 20px 0;
+        }
+        .image-container img {
+            width: 100%;
+            max-width: 800px;
+            margin: 10px 0;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            background-color: #ddd; /* 图片未加载时的占位背景 */
+            cursor: pointer; /* 鼠标悬停时显示手型 */
+        }
+        .pagination {
+            position: fixed;
+            top: 50%;
+            transform: translateY(-50%);
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+            pointer-events: none; /* 防止按钮遮挡点击 */
+        }
+        .pagination button {
+            pointer-events: auto; /* 恢复按钮点击事件 */
+            margin: 0 20px;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            border: none;
+            background-color: #007BFF;
+            color: white;
+            border-radius: 5px;
+        }
+        .pagination button:hover {
+            background-color: #0056b3;
+        }
+        .pagination button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        #file-input {
+            margin: 20px 0;
+        }
+
+        /* 模态框样式 */
+        .modal {
+            display: none; /* 默认隐藏模态框 */
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.9); /* 半透明黑色背景 */
+            justify-content: center;
+            align-items: center;
+            z-index: 1000; /* 确保模态框在最上层 */
+        }
+        .modal img {
+            max-width: 90%;
+            max-height: 90%;
+            border-radius: 8px;
+        }
+        .modal-close {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            color: white;
+            font-size: 30px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>图片分页显示（修复点击放大问题）</h1>
+
+    <!-- 文件夹选择按钮 -->
+    <input type="file" id="file-input" webkitdirectory multiple accept="image/*">
+    <p>请选择一个包含图片的文件夹（支持子文件夹）。</p>
+
+    <!-- 图片容器 -->
+    <div id="image-containers"></div>
+
+    <!-- 分页按钮 -->
+    <div class="pagination">
+        <button id="prev-page" disabled>上一页</button>
+        <button id="next-page" disabled>下一页</button>
+    </div>
+
+    <!-- 模态框 -->
+    <div id="modal" class="modal">
+        <span class="modal-close">&times;</span>
+        <img id="modal-image" src="" alt="放大图片">
+    </div>
+
+    <script>
+        // 图片文件数组
+        let imageFiles = [];
+
+        // 每页显示的图片数量
+        const imagesPerPage = 100;
+
+        // 当前显示的页码
+        let currentPage = 1;
+
+        // 获取 DOM 元素
+        const fileInput = document.getElementById('file-input');
+        const imageContainers = document.getElementById('image-containers');
+        const prevPageButton = document.getElementById('prev-page');
+        const nextPageButton = document.getElementById('next-page');
+        const modal = document.getElementById('modal');
+        const modalImage = document.getElementById('modal-image');
+        const modalClose = document.querySelector('.modal-close');
+
+        // 文件选择事件
+        fileInput.addEventListener('change', async (event) => {
+            const files = await getAllImageFiles(event.target.files);
+            if (files.length > 0) {
+                // 按文件名排序
+                files.sort((a, b) => a.webkitRelativePath.localeCompare(b.webkitRelativePath, undefined, { numeric: true }));
+                imageFiles = files;
+                currentPage = 1;
+                initContainers(); // 初始化容器
+                showPage(currentPage);
+                nextPageButton.disabled = imageFiles.length <= imagesPerPage;
+            }
+        });
+
+        // 递归获取所有图片文件
+        async function getAllImageFiles(fileList) {
+            const files = [];
+            for (const file of fileList) {
+                if (file.type.startsWith('image/')) {
+                    files.push(file);
+                }
+            }
+            return files;
+        }
+
+        // 初始化图片容器
+        function initContainers() {
+            const totalPages = Math.ceil(imageFiles.length / imagesPerPage);
+            imageContainers.innerHTML = ''; // 清空容器
+            for (let i = 0; i < totalPages; i++) {
+                const container = document.createElement('div');
+                container.className = 'image-container';
+                container.id = `image-container-${i + 1}`;
+                imageContainers.appendChild(container);
+            }
+        }
+
+        // 显示当前页的图片
+        function showPage(page) {
+            // 隐藏所有图片容器
+            const containers = document.querySelectorAll('.image-container');
+            containers.forEach(container => container.style.display = 'none');
+
+            // 计算当前页的图片范围
+            const startIndex = (page - 1) * imagesPerPage;
+            const endIndex = startIndex + imagesPerPage;
+
+            // 获取当前页的图片容器
+            const currentContainer = document.getElementById(`image-container-${page}`);
+            currentContainer.innerHTML = ''; // 清空容器内容
+
+            // 添加图片到容器
+            for (let i = startIndex; i < endIndex && i < imageFiles.length; i++) {
+                const img = document.createElement('img');
+                img.dataset.src = URL.createObjectURL(imageFiles[i]); // 使用 data-src 存储图片 URL
+                img.alt = `图片 ${i + 1}`;
+                img.style.minHeight = '200px'; // 设置占位高度
+                img.addEventListener('click', () => openModal(img.dataset.src)); // 点击图片打开模态框
+                currentContainer.appendChild(img);
+            }
+
+            // 显示当前页的容器
+            currentContainer.style.display = 'flex';
+
+            // 初始化懒加载
+            initLazyLoad();
+
+            // 更新分页按钮状态
+            prevPageButton.disabled = page === 1;
+            nextPageButton.disabled = page === Math.ceil(imageFiles.length / imagesPerPage);
+
+            // 滚动到页面顶部
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        // 初始化懒加载
+        function initLazyLoad() {
+            const lazyImages = document.querySelectorAll('img[data-src]');
+            const observer = new IntersectionObserver((entries, observer) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        const img = entry.target;
+                        img.src = img.dataset.src; // 加载图片
+                        img.removeAttribute('data-src'); // 移除 data-src 属性
+                        observer.unobserve(img); // 停止观察已加载的图片
+                    }
+                });
+            }, {
+                rootMargin: '0px',
+                threshold: 0.1 // 当图片进入视口 10% 时触发加载
+            });
+
+            lazyImages.forEach(img => observer.observe(img));
+        }
+
+        // 打开模态框
+        function openModal(imageSrc) {
+            modalImage.src = imageSrc; // 设置图片 URL
+            modal.style.display = 'flex'; // 显示模态框
+        }
+
+        // 关闭模态框
+        modalClose.addEventListener('click', () => {
+            modal.style.display = 'none';
+        });
+
+        // 点击模态框外部关闭
+        modal.addEventListener('click', (event) => {
+            if (event.target === modal) {
+                modal.style.display = 'none';
+            }
+        });
+
+        // 上一页按钮点击事件
+        prevPageButton.addEventListener('click', () => {
+            if (currentPage > 1) {
+                currentPage--;
+                showPage(currentPage);
+            }
+        });
+
+        // 下一页按钮点击事件
+        nextPageButton.addEventListener('click', () => {
+            if (currentPage < Math.ceil(imageFiles.length / imagesPerPage)) {
+                currentPage++;
+                showPage(currentPage);
+            }
+        });
+    </script>
+
+</body>
+</html>
